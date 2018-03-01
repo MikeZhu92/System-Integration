@@ -42,6 +42,8 @@ class Controller(object):
         # TODO: get throttle and brake
         acc = 0.5
 
+        acc = (target_linear_velocity - cur_linear_velocity) / 0.02
+
         # get steer angle
         steer = self.yaw_controller.get_steering(target_linear_velocity, target_angular_velocity,
                                                  cur_linear_velocity)
