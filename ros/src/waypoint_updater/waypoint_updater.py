@@ -72,7 +72,7 @@ class WaypointUpdater(object):
 
     def traffic_cb(self, msg):
         # Callback for /traffic_waypoint message. Implement
-        self.traffic_light = msg.state
+        self.traffic_light = msg.data
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
