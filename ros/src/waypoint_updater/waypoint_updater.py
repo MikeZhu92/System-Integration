@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
 import rospy
+import numpy as np
 from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
+from scipy.spatial import KDTree
 
 import math
 
@@ -44,11 +46,22 @@ class WaypointUpdater(object):
 
         self.cur_position = None
         self.base_waypoint = None
+        self.base_waypoint_header = None
+        self.base_waypoint_2d = None
+        self.base_waypoint_tree = None
         self.base_waypoint_len = 0
         # styx_msgs/msg/TrafficLight.msg, unknown is 4.
         self.traffic_light = 4
 
-        rospy.spin()
+        self.loop()
+
+    def loop(self):
+        rate = rospy.Rate(50)
+        while not rospy.is_shutdown():
+            if self.cur_position and self.base_waypoint_tree:
+                self.close_waypoint_id = self.find_closest_waypoint()
+                self.publish()
+            rate.sleep()
 
     def pose_cb(self, msg):
         """ current pose callback
@@ -57,17 +70,17 @@ class WaypointUpdater(object):
         """
         self.cur_position = msg.pose.position
 
-        if self.base_waypoint is not None:
-            self.find_closest_waypoint()
-            self.publish()
-
     def waypoints_cb(self, msg):
         """ base_waypoints callback
             - load the base_waypoint to class
         :param modified input name: waypoints to msg (avoid confusion)
         """
         self.base_waypoint = msg.waypoints
+        self.base_waypoint_header = msg.header
         self.base_waypoint_len = len(msg.waypoints)
+        if not self.base_waypoint_2d:
+            self.base_waypoint_2d = [[wp.pose.pose.position.x, wp.pose.pose.position.y] for wp in self.base_waypoint]
+            self.base_waypoint_tree = KDTree(self.base_waypoint_2d)
         rospy.loginfo(rospy.get_caller_id() + " Total base_waypoint: %s", self.base_waypoint_len)
 
     def traffic_cb(self, msg):
@@ -75,7 +88,7 @@ class WaypointUpdater(object):
         self.traffic_light = msg.data
 
     def obstacle_cb(self, msg):
-        # TODO: Callback for /obstacle_waypoint message. We will implement it later
+        # Callback for /obstacle_waypoint message. We will implement it later
         pass
 
     def get_waypoint_velocity(self, waypoint):
@@ -84,40 +97,31 @@ class WaypointUpdater(object):
     def set_waypoint_velocity(self, waypoints, waypoint, velocity):
         waypoints[waypoint].twist.twist.linear.x = velocity
 
-    def distance(self, waypoints, wp1, wp2):
-        dist = 0
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
-        for i in range(wp1, wp2+1):
-            dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
-            wp1 = i
-        return dist
-
-    # Added function
     def find_closest_waypoint(self):
-        min_id = -1
-        min_dist = 0
-        # dl = lambda a, b: math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
-        dl = lambda a, b: ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
-        # TODO: need to be optimize (use prev_close_point id)
-        for i, wp in enumerate(self.base_waypoint):
-            dist = dl(wp.pose.pose.position, self.cur_position)
-            if i == 0:
-                min_dist = dist
-            elif dist < min_dist:
-                min_dist = dist
-                min_id = i
+        x = self.cur_position.x
+        y = self.cur_position.y
+        closest_id = self.base_waypoint_tree.query([x, y], 1)[1]
+        if closest_id > 0:
+            # check close_id is in front or back
+            cur_close_point = np.array(self.base_waypoint_2d[closest_id])
+            prev_close_point = np.array(self.base_waypoint_2d[closest_id - 1])
 
-        if self.cur_position.x > self.base_waypoint[min_id].pose.pose.position.x:
-            min_id += 1
-        self.close_waypoint_id = min_id
-        # rospy.loginfo(rospy.get_caller_id() + " prev_id : %s, curr_id : %s",
-        #               self.prev_close_waypoint_id, self.close_waypoint_id)
+            vector1 = cur_close_point - prev_close_point
+            vector2 = np.array([x, y]) - cur_close_point
+
+            flag = np.dot(vector1, vector2)
+
+            if flag < 0.:
+                closest_id = (closest_id + 1) % self.base_waypoint_len
+            # rospy.loginfo(rospy.get_caller_id() + " prev_id : %s, curr_id : %s",
+            #               self.prev_close_waypoint_id, self.close_waypoint_id)
+        return closest_id
 
     def publish(self):
-        # ref: waypoint_updater.py/publish()
         lane = Lane()
-        lane.header.frame_id = '/world'
-        lane.header.stamp = rospy.Time(0)
+        # lane.header.frame_id = '/world'
+        # lane.header.stamp = rospy.Time(0)
+        lane.header = self.base_waypoint_header
 
         if self.close_waypoint_id + LOOKAHEAD_WPS > self.base_waypoint_len:
             # TODO: we may need to modify the code to deal with out of waypoint probably treat it as a red light or loop

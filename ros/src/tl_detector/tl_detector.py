@@ -24,7 +24,6 @@ class TLDetector(object):
 
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
-
         '''
         /vehicle/traffic_lights provides you with the location of the traffic light in 3D map space and
         helps you acquire an accurate ground truth data source for the traffic light
@@ -71,24 +70,23 @@ class TLDetector(object):
         self.has_image = True
         self.camera_image = msg
         light_wp, state = self.process_traffic_lights()
-
         '''
         Publish upcoming red lights at camera frequency.
         Each predicted state has to occur `STATE_COUNT_THRESHOLD` number
         of times till we start using it. Otherwise the previous stable state is
         used.
         '''
-        # if self.state != state:
-        #     self.state_count = 0
-        #     self.state = state
-        # elif self.state_count >= STATE_COUNT_THRESHOLD:
-        #     self.last_state = self.state
-        #     light_wp = light_wp if state == TrafficLight.RED else -1
-        #     self.last_wp = light_wp
-        #     self.upcoming_red_light_pub.publish(Int32(light_wp))
-        # else:
-        #     self.upcoming_red_light_pub.publish(Int32(self.last_wp))
-        # self.state_count += 1
+        if self.state != state:
+            self.state_count = 0
+            self.state = state
+        elif self.state_count >= STATE_COUNT_THRESHOLD:
+            self.last_state = self.state
+            light_wp = light_wp if state == TrafficLight.RED else -1
+            self.last_wp = light_wp
+            self.upcoming_red_light_pub.publish(Int32(light_wp))
+        else:
+            self.upcoming_red_light_pub.publish(Int32(self.last_wp))
+        self.state_count += 1
 
     def get_closest_waypoint(self, pose):
         """Identifies the closest path waypoint to the given position
@@ -118,17 +116,19 @@ class TLDetector(object):
             return False
 
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
+        # TODO: check how image data information
+        print("image_size is: ".format(cv_image.size()))
 
         #Get classification
-        try:
-            traffic_class, score = self.light_classifier.get_classification(cv_image)
-            if traffic_class is not TrafficLight.UNKNOWN:
-                print("Traffic Light is {}".format(traffic_class))
-                print("Score is {}".format(score))
-            return traffic_class
-        except:
-            return TrafficLight.UNKNOWN
-        # return self.light_classifier.get_classification(cv_image)
+        # try:
+        #     traffic_class, score = self.light_classifier.get_classification(cv_image)
+        #     if traffic_class is not TrafficLight.UNKNOWN:
+        #         print("Traffic Light is {}".format(traffic_class))
+        #         print("Score is {}".format(score))
+        #     return traffic_class
+        # except:
+        #     return TrafficLight.UNKNOWN
+        return self.light_classifier.get_classification(cv_image)
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -148,13 +148,11 @@ class TLDetector(object):
 
         #TODO find the closest visible traffic light (if one exists)
 
-        # if light:
-        if True:
+        if light:
             # TODO: Currently use ground truth traffic light info: self.lights
             state = self.get_light_state(light)
             state_gt = self.lights[0].state  # all the traffic lights states are the same in the simulator
-            return -1, state
-            # return light_wp, state
+            return light_wp, state
 
         self.waypoints = None
         return -1, TrafficLight.UNKNOWN
