@@ -14,3 +14,5 @@ ros/src/styx/__pycache__/
 ros/launch/debug_styx\.launch
 
 *.pb
+
+ros/\.vscode/
